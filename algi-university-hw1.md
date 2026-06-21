@@ -41,17 +41,27 @@ On large marketplaces, **millions** of products are uploaded by sellers who ofte
 
 ## 🧠 3. Model Selection (The Core Decision)
 
-The task needs a model that understands **vision + language together** → a **multimodal model**. No single model does both jobs best, so we use the *right tool for each output*:
+The task needs a model that understands **vision + language together** → a **multimodal model (VLM)**. There's a whole landscape to choose from — CLIP/BLIP are just the classic entry point. Below is the wider menu, grouped by job:
 
-| Model | Type | Strength | Our Use |
-|-------|------|----------|---------|
-| **CLIP** (OpenAI) | Contrastive (image ↔ text matching) | Zero-shot label matching, fast, no retraining | ✅ **Category prediction** |
-| **BLIP / BLIP-2** | Generative (vision → language) | Fluent captioning & description | ✅ **Description generation** |
+### 🏆 The Model Landscape
+| Model | Type | Best at | Cost / Effort |
+|-------|------|---------|---------------|
+| **GPT-4o** (OpenAI) | Large VLM (API) | Top-quality category **+** description in one call | 💰💰 API cost, zero setup |
+| **Gemini 1.5 / 2.0** (Google) | Large VLM (API) | Strong reasoning, long context, both outputs | 💰💰 API cost |
+| **Claude 3.5 Sonnet** (Anthropic) | Large VLM (API) | Detailed, well-structured descriptions | 💰💰 API cost |
+| **Qwen2-VL / LLaVA-1.6** | Open-source VLM | Self-hosted, both outputs, customizable | 💰 GPU, full control |
+| **CLIP** (OpenAI) | Contrastive matcher | ⚡ Fast zero-shot **category** matching | 🆓 cheap, lightweight |
+| **BLIP / BLIP-2** | Generative captioner | Lightweight **description** generation | 🆓 cheap, open-source |
 
-**Decision rationale:**
-- 🔹 **CLIP** doesn't *write* text — it *matches*. Perfect for picking the closest category from a known list (zero-shot, so new categories need no retraining).
-- 🔹 **BLIP** is *generative* — it produces natural sentences describing what it sees.
-- 🔹 **Considered alternatives:** `LLaVA` / `GPT-4V` (more powerful but heavier & costlier); `ViT + classifier head` (accurate but needs labeled training data). **CLIP + BLIP** gives the best **accuracy-to-cost-to-effort** balance for Day 1.
+### ✅ Recommended Approach
+Pick based on priorities — there are **two strong strategies**:
+
+- **Strategy A — Best Quality (modern):** Use **one large VLM** (e.g., **GPT-4o** or **Qwen2-VL**) with a single prompt: *"Return the product category and a 2-line description as JSON."* → simplest pipeline, highest quality, one model does both.
+- **Strategy B — Best Cost/Speed (specialized):** Use **CLIP for category** (fast zero-shot match) **+ BLIP for description**. → cheapest, fully open-source, great when running at massive scale.
+
+> � **My pick:** Start with **Strategy A (GPT-4o / Qwen2-VL)** for the best out-of-the-box quality, then migrate high-volume traffic to **Strategy B (CLIP + BLIP)** to cut cost at scale. Best of both worlds: **quality first, optimize later.**
+
+**Why a VLM at all?** A text-only or image-only model can't connect *what it sees* to *what it writes*. Multimodal models share a vision + language space, so they can both **classify** and **describe** from a single image.
 
 ---
 
@@ -66,9 +76,9 @@ flowchart TB
     subgraph PROC["⚙️ Processing Layer"]
         B[Preprocessing<br/>resize • normalize • denoise]
     end
-    subgraph MODELS["🧠 Multimodal Model Layer"]
-        D[CLIP<br/>Image ↔ Category Matching]
-        E[BLIP<br/>Image → Description]
+    subgraph MODELS["🧠 Multimodal Model Layer (VLM)"]
+        D[Category Engine<br/>GPT-4o / Qwen-VL / CLIP]
+        E[Description Engine<br/>GPT-4o / Qwen-VL / BLIP]
     end
     subgraph OUT["📦 Output Layer"]
         H[Post-processing<br/>format • SEO keywords • templates]
@@ -112,15 +122,15 @@ sequenceDiagram
 ### Step-by-step
 1. **Upload** → Seller submits a product image.
 2. **Preprocess** → Resize, normalize, denoise.
-3. **Classify (CLIP)** → Embed image, compare against category-label embeddings, pick top match + confidence.
-4. **Describe (BLIP)** → Generate a fluent description from the image.
+3. **Classify** → VLM/CLIP predicts the category (match against label set) with a confidence score.
+4. **Describe** → VLM/BLIP generates a fluent product description from the image.
 5. **Post-process** → Clean text, inject SEO keywords, apply brand template.
 6. **Output** → Save to catalog; low-confidence cases routed for human review.
 
 ### 🛠️ Suggested Tech Stack
 | Layer | Tools |
 |-------|-------|
-| Models | CLIP, BLIP-2 (Hugging Face `transformers`) |
+| Models | **Strategy A:** GPT-4o / Gemini / Qwen2-VL · **Strategy B:** CLIP + BLIP-2 (HF `transformers`) |
 | Serving | FastAPI / Flask + PyTorch |
 | Frontend | React + Tailwind (upload UI) |
 | Infra | Docker · GPU inference · Redis cache |
