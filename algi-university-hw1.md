@@ -5,14 +5,14 @@
 
 **One image in → Category + Description out.**
 
-`GEN AI Bootcamp · Day 1 Homework` · **Author:** _[Your Name]_ · **Domain:** E-Commerce (Amazon / Flipkart style)
+`GEN AI Bootcamp · Day 1 Homework` · **Author:** Parth Amilkanthwar · **Domain:** E-Commerce (Amazon / Flipkart style)
 
 </div>
 
 ---
 
 > ### ⚡ TL;DR (30-second read)
-> Sellers waste hours manually tagging and describing products. **Visual Catalog AI** takes a single product image and uses **CLIP** to predict the *category* and **BLIP** to generate a *sales-ready description* — automatically, at scale. Two specialized multimodal models, one clean pipeline, instant catalog data.
+> Sellers waste hours manually tagging and describing products. **Visual Catalog AI** takes a single product image and runs **CLIP** (category) and **BLIP** (sales-ready description) **in parallel**, returning both in **~200–400 ms** on GPU. Two specialized multimodal models, one clean pipeline, instant catalog data at scale.
 
 ---
 
@@ -153,7 +153,7 @@ sequenceDiagram
 | Blurry / low-light image | Quality check → ask seller to re-upload |
 | Multiple products in one photo | Object detection to crop the main item |
 | Unknown / new category | Confidence threshold → flag for human review |
-| Description hallucination | Constrain prompt + grounding checks |
+| Description hallucination | **Post-generation grounding check** — filter BLIP's output against visual attributes detected in the image (drop claims not supported by what's seen) |
 
 ---
 
@@ -164,7 +164,7 @@ The **90% target only means something against a named benchmark**. I'd evaluate 
 
 | Dataset | What it offers | Used for |
 |---------|----------------|----------|
-| **Amazon Berkeley Objects (ABO)** | ~147K real product listings with images + category + metadata | Primary benchmark (category accuracy) |
+| **Amazon Berkeley Objects (ABO)** | ~147K real product listings with images + category + metadata; **released by Amazon itself**, making it the most credible benchmark for this exact use case | Primary benchmark (category accuracy) |
 | **Fashion Product Images (Kaggle, ~44K)** | Product photos labeled by category, sub-category, color | Apparel category eval |
 | **Stanford Online Products (SOP)** | ~120K e-commerce product images | Retrieval / matching sanity checks |
 | **Amazon Reviews 2023 (metadata)** | Real seller titles + descriptions | Reference text for BLEU/ROUGE on descriptions |
