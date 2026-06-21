@@ -53,15 +53,24 @@ The task needs a model that understands **vision + language together** → a **m
 | **CLIP** (OpenAI) | Contrastive matcher | ⚡ Fast zero-shot **category** matching | 🆓 cheap, lightweight |
 | **BLIP / BLIP-2** | Generative captioner | Lightweight **description** generation | 🆓 cheap, open-source |
 
-### ✅ Recommended Approach
-Pick based on priorities — there are **two strong strategies**:
+### ✅ Decision: CLIP + BLIP (committed architecture)
+**I commit to a two-model specialized pipeline: CLIP for category, BLIP for description.** This is the architecture used in *every* diagram, metric, and latency estimate below — no hedging.
 
-- **Strategy A — Best Quality (modern):** Use **one large VLM** (e.g., **GPT-4o** or **Qwen2-VL**) with a single prompt: *"Return the product category and a 2-line description as JSON."* → simplest pipeline, highest quality, one model does both.
-- **Strategy B — Best Cost/Speed (specialized):** Use **CLIP for category** (fast zero-shot match) **+ BLIP for description**. → cheapest, fully open-source, great when running at massive scale.
+**Why this over a single large VLM (GPT-4o / Gemini)?** At Amazon/Flipkart scale, the system runs on **millions of uploads/day**, so latency and per-call cost dominate the decision:
 
-> � **My pick:** Start with **Strategy A (GPT-4o / Qwen2-VL)** for the best out-of-the-box quality, then migrate high-volume traffic to **Strategy B (CLIP + BLIP)** to cut cost at scale. Best of both worlds: **quality first, optimize later.**
+| Factor | ✅ CLIP + BLIP (chosen) | Large VLM (GPT-4o, etc.) |
+|--------|------------------------|--------------------------|
+| Latency | **~200–400 ms** on GPU (local) | ~2–3 s per API round-trip |
+| Cost | **~free** after self-hosting | Per-image API fee × millions |
+| Control / privacy | **Full** (weights on-prem) | Data leaves to 3rd-party API |
+| Quality | Strong, sufficient for catalog | Slightly higher, but overkill |
 
-**Why a VLM at all?** A text-only or image-only model can't connect *what it sees* to *what it writes*. Multimodal models share a vision + language space, so they can both **classify** and **describe** from a single image.
+**Where large VLMs still fit (not the primary architecture):** a **bootstrap/cold-start tier** — use GPT-4o once to *auto-generate the training/eval labels*, then run CLIP+BLIP in production. They are an offline data tool, **not** part of the live request path.
+
+**Why these two specifically?**
+- 🔹 **CLIP** *matches* an image to the closest category label (zero-shot → new categories need no retraining).
+- 🔹 **BLIP** *generates* a fluent description from the image.
+- A text-only or image-only model can't link *what it sees* to *what it writes*; both CLIP and BLIP share a vision+language space, so together they cover classification **and** description.
 
 ---
 
@@ -76,9 +85,9 @@ flowchart TB
     subgraph PROC["⚙️ Processing Layer"]
         B[Preprocessing<br/>resize • normalize • denoise]
     end
-    subgraph MODELS["🧠 Multimodal Model Layer (VLM)"]
-        D[Category Engine<br/>GPT-4o / Qwen-VL / CLIP]
-        E[Description Engine<br/>GPT-4o / Qwen-VL / BLIP]
+    subgraph MODELS["🧠 Multimodal Model Layer"]
+        D[CLIP<br/>Image ↔ Category Matching]
+        E[BLIP<br/>Image → Description]
     end
     subgraph OUT["📦 Output Layer"]
         H[Post-processing<br/>format • SEO keywords • templates]
@@ -122,15 +131,15 @@ sequenceDiagram
 ### Step-by-step
 1. **Upload** → Seller submits a product image.
 2. **Preprocess** → Resize, normalize, denoise.
-3. **Classify** → VLM/CLIP predicts the category (match against label set) with a confidence score.
-4. **Describe** → VLM/BLIP generates a fluent product description from the image.
+3. **Classify (CLIP)** → Embed image, match against category-label embeddings, pick top label + confidence score.
+4. **Describe (BLIP)** → Generate a fluent product description from the image.
 5. **Post-process** → Clean text, inject SEO keywords, apply brand template.
 6. **Output** → Save to catalog; low-confidence cases routed for human review.
 
 ### 🛠️ Suggested Tech Stack
 | Layer | Tools |
 |-------|-------|
-| Models | **Strategy A:** GPT-4o / Gemini / Qwen2-VL · **Strategy B:** CLIP + BLIP-2 (HF `transformers`) |
+| Models | CLIP + BLIP-2 (Hugging Face `transformers`, PyTorch) |
 | Serving | FastAPI / Flask + PyTorch |
 | Frontend | React + Tailwind (upload UI) |
 | Infra | Docker · GPU inference · Redis cache |
@@ -149,6 +158,18 @@ sequenceDiagram
 ---
 
 ## 📊 6. Evaluation (How we know it's good)
+
+### 📂 Evaluation Datasets
+The **90% target only means something against a named benchmark**. I'd evaluate on real product-catalog data:
+
+| Dataset | What it offers | Used for |
+|---------|----------------|----------|
+| **Amazon Berkeley Objects (ABO)** | ~147K real product listings with images + category + metadata | Primary benchmark (category accuracy) |
+| **Fashion Product Images (Kaggle, ~44K)** | Product photos labeled by category, sub-category, color | Apparel category eval |
+| **Stanford Online Products (SOP)** | ~120K e-commerce product images | Retrieval / matching sanity checks |
+| **Amazon Reviews 2023 (metadata)** | Real seller titles + descriptions | Reference text for BLEU/ROUGE on descriptions |
+
+**Protocol:** hold out a stratified **test split** (so rare categories are represented), report metrics per-category, and use the real human-written descriptions in these datasets as the *reference text* for BLEU/ROUGE/METEOR.
 
 ```mermaid
 flowchart LR
@@ -180,6 +201,7 @@ flowchart LR
 | Benefit | Impact |
 |---------|--------|
 | ⏱️ **Time saved** | Listing time cut from minutes → seconds per product |
+| ⚡ **Real-time latency** | **~200–400 ms** per image on GPU → fits live upload flow (vs ~2–3 s for a VLM API) |
 | 📈 **More sales** | Better categories + descriptions → higher search visibility & conversion |
 | 🎯 **Consistency** | Uniform, SEO-friendly catalog at scale |
 | 🚀 **Faster onboarding** | New sellers go live instantly |
@@ -190,8 +212,10 @@ flowchart LR
 ## 🔮 8. Future Scope (Roadmap)
 - Add **price suggestion** and **attribute extraction** (color, size, material).
 - Support **multi-language** descriptions for global markets.
-- Fine-tune on the platform's own catalog for domain accuracy.
-- Upgrade to **GPT-4V / LLaVA** for richer, context-aware copy.
+- Fine-tune CLIP & BLIP on the platform's own catalog for domain accuracy.
+- **Active-learning loop** — feed low-confidence / human-corrected cases back into training.
+- **Multi-image + attribute extraction** — combine angles to pull color, size, material.
+- **Edge inference** — distil/quantize models for on-device seller-app tagging.
 
 ---
 
